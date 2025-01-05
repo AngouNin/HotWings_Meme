@@ -4,7 +4,7 @@
 
 // Import necessary modules from Anchor framework and SPL token program
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 // Declare the program ID for the smart contract
 declare_id!("F315xx75TiyxnGV4vAZssphVdauiYNA5bJThvKGty6Mj");
