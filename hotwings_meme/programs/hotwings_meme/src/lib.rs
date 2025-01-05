@@ -20,10 +20,9 @@ pub mod hotwings_contract {
         state.owner = *ctx.accounts.owner.key; // Set the owner to the account invoking the function
         state.total_supply = total_supply; // Set the total supply of the token
         state.market_cap = 0; // Initialize market cap to zero
-        // Define the unlocking milestones and their corresponding percentages
-        state.unlocks = vec![45000, 105500, 225000, 395000, 650000, 997000, 1574000, 2500000];
-        state.unlocked_percentages = vec![10, 10, 10, 10, 10, 10, 10, 30];
-        state.current_milestone = 0; // Initialize the current milestone
+        state.unlocks = vec![45000, 105500, 225000, 395000, 650000, 997000, 1574000, 2500000]; // Unlocked milestones
+        state.unlocked_percentages = vec![10, 10, 10, 10, 10, 10, 10, 30]; // Corresponding percentages for each milestone
+        state.current_milestone = 0; // Initialize current milestone
         state.start_timestamp = Clock::get()?.unix_timestamp; // Record the start time of the contract
         Ok(())
     }
@@ -32,7 +31,8 @@ pub mod hotwings_contract {
     pub fn update_market_cap(ctx: Context<UpdateMarketCap>, new_cap: u64) -> Result<()> {
         let state = &mut ctx.accounts.state; // Mutable reference to the contract state
         state.market_cap = new_cap; // Update market cap to the new value
-        state.check_milestones()?; // Check if any milestones need to be updated based on the new market cap
+        // Call check_milestones to ensure milestones are updated
+        state.check_milestones()?; 
         Ok(())
     }
 
@@ -85,6 +85,21 @@ pub struct State {
     pub unlocked_percentages: Vec<u8>, // Corresponding percentages for each milestone
     pub current_milestone: usize, // Index of the current milestone
     pub start_timestamp: i64, // Timestamp when the contract was initialized
+}
+
+impl State {
+    // Function to check milestones based on the current market cap
+    pub fn check_milestones(&mut self) -> Result<()> {
+        // Check if the market cap has passed the next milestone
+        while self.current_milestone < self.unlocks.len() && self.market_cap >= self.unlocks[self.current_milestone] {
+            // Logic to handle what happens when a milestone is reached
+            // This could involve unlocking tokens, increasing supply, or logging an event, etc.
+            
+            // Move to the next milestone
+            self.current_milestone += 1;
+        }
+        Ok(())
+    }
 }
 
 // Define contexts for each function in the contract
