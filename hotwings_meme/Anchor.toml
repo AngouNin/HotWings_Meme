@@ -7,6 +7,9 @@ skip-lint = false
 [programs.localnet]
 hotwings_meme = "F315xx75TiyxnGV4vAZssphVdauiYNA5bJThvKGty6Mj"
 
+[programs.testnet]
+hotwings_meme = "F315xx75TiyxnGV4vAZssphVdauiYNA5bJThvKGty6Mj"
+
 [registry]
 url = "https://api.apr.dev"
 

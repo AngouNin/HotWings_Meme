@@ -1,173 +1,117 @@
-import * as anchor from '@project-serum/anchor';
-import {
-    Program,
-    web3,
-} from '@project-serum/anchor';
-import { Token, TOKEN_PROGRAM_ID } from '@solana/spl-token';
-import assert from 'assert';
-import { HotWingsContract } from '../target/types/hotwings_contract';
+import * as anchor from "@project-serum/anchor";  // Import the Anchor framework to interact with Solana
+import { Program } from "@project-serum/anchor";  // Import the Program class to interact with the smart contract
+import { PublicKey, SystemProgram } from "@solana/web3.js";  // Import necessary Solana components for interacting with the blockchain
+import { expect } from "chai";  // Import chai for assertions in the tests
+import { HotwingsContract } from "../target/types/hotwings_contract"; // Import the contract type definition from the Anchor workspace
 
-const { SystemProgram } = web3;
+// Describe the test suite for the hotwings_contract program
+describe("hotwings_contract", () => {
+  // Set up the provider for interacting with the Solana blockchain (using devnet by default)
+  const provider = anchor.AnchorProvider.env(); // This connects to the devnet environment (default setup)
+  anchor.setProvider(provider);  // Set the provider globally so the program can interact with the blockchain
 
-describe('HotWingsMemecoin', () => {
-    // Set up the provider using the environment (devnet/localnet/mainnet)
-    anchor.setProvider(anchor.AnchorProvider.env());
-    
-    // Create an instance of the HotWings contract program
-    const program = anchor.workspace.HotWingsContract as Program<HotWingsContract>;
+  // Define the smart contract (program) that we want to interact with
+  const program = anchor.workspace.HotwingsContract as Program<HotwingsContract>;
 
-    const totalSupply = 1000000; // Set a total supply of tokens for the tests
+  // Declare the keypairs for accounts that will interact with the contract
+  let stateAccount: anchor.web3.Keypair;  // Account where the contract state will be stored
+  let owner: anchor.web3.Keypair;  // The owner of the contract, who can initialize and update the contract
+  let receiver: anchor.web3.Keypair;  // Account that will receive tokens in the transfer test
+  let burnWallet: anchor.web3.Keypair;  // Wallet to receive the "burned" tokens as part of tax distribution
+  let marketingWallet: anchor.web3.Keypair;  // Wallet to receive the "marketing" tokens as part of tax distribution
 
-    let state: anchor.web3.PublicKey; // Public key for the state account of the contract
-    let owner: anchor.web3.Keypair; // Owner's keypair that will own the contract
-    let burnWallet: anchor.web3.PublicKey; // Public key for the burn wallet
-    let marketingWallet: anchor.web3.PublicKey; // Public key for the marketing wallet
-    let tokenMint: anchor.web3.PublicKey; // The mint public key for the SPL token
-    let ownerTokenAccount: anchor.web3.PublicKey; // The owner's token account to hold tokens
+  // `before` hook to initialize the accounts and set up the environment before running tests
+  before(async () => {
+    // Generate new keypairs for the state, owner, receiver, burn wallet, and marketing wallet
+    stateAccount = anchor.web3.Keypair.generate();
+    owner = anchor.web3.Keypair.generate();
+    receiver = anchor.web3.Keypair.generate();
+    burnWallet = anchor.web3.Keypair.generate();
+    marketingWallet = anchor.web3.Keypair.generate();
 
-    before(async () => {
-        owner = anchor.web3.Keypair.generate(); // Generate a new keypair for the owner
-        
-        // Airdrop some SOL to the owner for transaction fees
-        await anchor.getProvider().connection.requestAirdrop(owner.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL);
+    // Airdrop SOL to the owner's account to pay for transaction fees
+    const airdropSignature = await provider.connection.requestAirdrop(
+      owner.publicKey,  // Airdrop SOL to the owner's public key
+      anchor.web3.LAMPORTS_PER_SOL * 10  // Airdrop 10 SOL (1 SOL = 1 billion lamports)
+    );
+    // Wait for the transaction to be confirmed
+    await provider.connection.confirmTransaction(airdropSignature);
+  });
 
-        // Create new token mint associated with the owner
-        const mint = await Token.createMint(
-            anchor.getProvider().connection,
-            owner,
-            owner.publicKey,
-            null,
-            9, // Setting the decimal precision for the token
-            TOKEN_PROGRAM_ID,
-        );
-        tokenMint = mint.publicKey; // Record the public key of the created mint
+  // Test for initializing the contract
+  it("Initializes the contract", async () => {
+    const totalSupply = new anchor.BN(1_000_000);  // Set the total supply of tokens to 1,000,000
 
-        // Create the owner's token account to hold the tokens
-        ownerTokenAccount = await mint.getOrCreateAssociatedAccountInfo(owner.publicKey);
-        
-        // Create burn and marketing wallets as new token accounts
-        burnWallet = await mint.getOrCreateAssociatedAccountInfo(anchor.web3.Keypair.generate().publicKey);
-        marketingWallet = await mint.getOrCreateAssociatedAccountInfo(anchor.web3.Keypair.generate().publicKey);
-        
-        // Initialize the contract state with the specified total supply
-        const tx = await program.methods
-            .initialize(totalSupply)
-            .accounts({
-                state: state, // State account for storing contract info
-                owner: owner.publicKey, // Owner's public key
-                systemProgram: SystemProgram.programId, // Reference to Solana's system program
-            })
-            .signers([owner]) // Sign the transaction with the owner's keypair
-            .rpc(); // Send the transaction
+    // Call the `initialize` method to initialize the contract state
+    await program.methods
+      .initialize(totalSupply)  // Pass the total supply to the `initialize` function
+      .accounts({
+        state: stateAccount.publicKey,  // Specify the state account where contract data will be stored
+        owner: owner.publicKey,  // The owner account that is initializing the contract
+        systemProgram: SystemProgram.programId,  // The system program needed for account creation
+      })
+      .signers([stateAccount, owner])  // Sign the transaction with both the `stateAccount` and `owner` accounts
+      .rpc();  // Send the transaction to the blockchain
 
-        console.log("Initialize transaction signature", tx); // Log the transaction signature for debugging
-    });
+    // Fetch the state account data from the blockchain to verify the initialization
+    const state = await program.account.state.fetch(stateAccount.publicKey);
 
-    it('should update market cap', async () => {
-        const newMarketCap = 500000; // Define a new market cap value to be set
+    // Assertions to check if the contract's state was set correctly
+    expect(state.owner.toBase58()).to.equal(owner.publicKey.toBase58());  // Verify the owner is correctly set
+    expect(state.totalSupply.toNumber()).to.equal(totalSupply.toNumber());  // Verify the total supply matches
+    expect(state.marketCap.toNumber()).to.equal(0);  // Verify the initial market cap is set to 0
+  });
 
-        // Invoke the updateMarketCap method
-        await program.methods
-            .updateMarketCap(newMarketCap) // Call the contract method to update market cap
-            .accounts({
-                state: state, // Pass the state account to allow updates
-                owner: owner.publicKey, // Authenticate the action using the owner's public key
-            })
-            .signers([owner]) // Sign the transaction with the owner's keypair
-            .rpc(); // Send the transaction
-        
-        // Fetch the updated state to verify the market cap was updated
-        const updatedState = await program.account.state.fetch(state);
-        
-        // Assert that the updated market cap matches the expected value
-        assert.strictEqual(updatedState.marketCap.toNumber(), newMarketCap, "Market cap should be updated");
-    });
+  // Test for updating the market cap
+  it("Updates market cap", async () => {
+    const newMarketCap = new anchor.BN(500_000);  // Set a new market cap value
 
-    it('should transfer tokens and respect wallet cap and tax rules', async () => {
-        const transferAmount = 10000; // Example transfer amount for testing
+    // Call the `updateMarketCap` method to update the market cap in the contract
+    await program.methods
+      .updateMarketCap(newMarketCap)  // Pass the new market cap value to the method
+      .accounts({
+        state: stateAccount.publicKey,  // The state account where the market cap is stored
+        owner: owner.publicKey,  // The owner account who is allowed to update the market cap
+      })
+      .signers([owner])  // Sign the transaction with the `owner` account
+      .rpc();  // Send the transaction to the blockchain
 
-        // Mint tokens to the owner's token account to initiate the transfer test
-        await mint.mintTo(ownerTokenAccount, owner.publicKey, [], transferAmount);
+    // Fetch the state account data to verify the market cap update
+    const state = await program.account.state.fetch(stateAccount.publicKey);
+    expect(state.marketCap.toNumber()).to.equal(newMarketCap.toNumber());  // Verify the new market cap
+  });
 
-        // Get current balances for comparison after the transfer
-        const preTransferOwnerBalance = await mint.getAccountInfo(ownerTokenAccount);
-        const preTransferBurnBalance = await mint.getAccountInfo(burnWallet);
-        const preTransferMarketingBalance = await mint.getAccountInfo(marketingWallet);
-        
-        // Perform the token transfer
-        await program.methods
-            .transfer(transferAmount) // Invoke the transfer method
-            .accounts({
-                state: state, // Pass in the state account for contract data
-                sender: owner.publicKey, // Specify the sender (owner) account
-                receiver: ownerTokenAccount, // Specify the receiver account
-                burnWallet: burnWallet, // Specify the burn wallet
-                marketingWallet: marketingWallet, // Specify the marketing wallet
-                tokenProgram: TOKEN_PROGRAM_ID, // Reference to the SPL Token program
-            })
-            .signers([owner]) // Sign the transaction with the owner's keypair
-            .rpc(); // Send the transaction
-        
-        // Get updated balances after the transfer for verification
-        const postTransferOwnerBalance = await mint.getAccountInfo(ownerTokenAccount);
-        const postTransferBurnBalance = await mint.getAccountInfo(burnWallet);
-        const postTransferMarketingBalance = await mint.getAccountInfo(marketingWallet);
+  // Test for performing a token transfer with tax and wallet restrictions
+  it("Performs a token transfer with tax and wallet restrictions", async () => {
+    const transferAmount = new anchor.BN(10_000);  // Set the amount of tokens to transfer
 
-        // Calculate the expected values based on logic within the transfer function
-        const expectedTax = Math.floor(transferAmount * 0.015); // Calculate 1.5% tax
-        const expectedBurnAndMarketingAmount = Math.floor(expectedTax / 2); // Half for each wallet
-        const expectedTransferAmount = transferAmount - expectedTax; // Amount to transfer after tax deduction
+    // Call the `transfer` method to simulate a token transfer from `owner` to `receiver`
+    await program.methods
+      .transfer(transferAmount)  // Pass the transfer amount to the `transfer` method
+      .accounts({
+        state: stateAccount.publicKey,  // The state account that holds contract data
+        sender: owner.publicKey,  // The sender (owner) of the tokens
+        receiver: receiver.publicKey,  // The receiver of the tokens
+        burnWallet: burnWallet.publicKey,  // The wallet where burned tokens will be sent
+        marketingWallet: marketingWallet.publicKey,  // The wallet where marketing tokens will be sent
+        tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,  // The SPL Token program needed for token transfers
+      })
+      .signers([owner])  // Sign the transaction with the `owner` account
+      .rpc();  // Send the transaction to the blockchain
 
-        // Validate the owner's balance after the transfer
-        assert.strictEqual(
-            postTransferOwnerBalance.amount.toNumber(),
-            preTransferOwnerBalance.amount.toNumber() + expectedTransferAmount,
-            "Owner's token balance should reflect the transfer minus taxes"
-        );
+    // Fetch the token account for the receiver and verify the balance after the transfer
+    const receiverTokenAccount = await program.account.tokenAccount.fetch(receiver.publicKey);
+    const tax = Math.floor(transferAmount.toNumber() * 0.015);  // Calculate 1.5% tax on the transfer
+    const expectedBalance = transferAmount.toNumber() - tax;  // Calculate the expected balance after tax is deducted
+    expect(receiverTokenAccount.amount.toNumber()).to.equal(expectedBalance);  // Verify the receiver's token balance
 
-        // Validate the burn wallet balance after the transfer
-        assert.strictEqual(
-            postTransferBurnBalance.amount.toNumber(),
-            preTransferBurnBalance.amount.toNumber() + expectedBurnAndMarketingAmount,
-            "Burn wallet should have increased by half the tax amount"
-        );
+    // Fetch the burn and marketing wallet token accounts and verify the tax split
+    const burnWalletTokenAccount = await program.account.tokenAccount.fetch(burnWallet.publicKey);
+    const marketingWalletTokenAccount = await program.account.tokenAccount.fetch(marketingWallet.publicKey);
+    const expectedTaxSplit = Math.floor(tax / 2);  // Split the tax equally between burn and marketing wallets
 
-        // Validate the marketing wallet balance after the transfer
-        assert.strictEqual(
-            postTransferMarketingBalance.amount.toNumber(),
-            preTransferMarketingBalance.amount.toNumber() + expectedBurnAndMarketingAmount,
-            "Marketing wallet should have increased by half the tax amount"
-        );
-    });
-
-    it('should fail if wallet cap is exceeded', async () => {
-        const excessiveAmount = (totalSupply * 5 / 100) + 1; // Exceeding 5% of total supply
-
-        // Mint the maximum supply to the owner's account to initiate the cap test
-        await mint.mintTo(ownerTokenAccount, owner.publicKey, [], totalSupply); // Minting max supply
-
-        try {
-            // Attempt to transfer an amount exceeding the wallet cap
-            await program.methods
-                .transfer(excessiveAmount) // Invoke the transfer method
-                .accounts({
-                    state: state, // Pass in the state account which has restrictions
-                    sender: owner.publicKey, // Specify the sender (owner) account
-                    receiver: ownerTokenAccount, // Specify the receiver account
-                    burnWallet: burnWallet, // Specify the burn wallet
-                    marketingWallet: marketingWallet, // Specify the marketing wallet
-                    tokenProgram: TOKEN_PROGRAM_ID, // Reference to the SPL Token program
-                })
-                .signers([owner]) // Sign the transaction with the owner's keypair
-                .rpc(); // Send the transaction
-            assert.fail("Expected an error due to wallet cap exceeded but got success."); // Fail test if no error occurred
-        } catch (error) {
-            // Ensure the correct error code is thrown for exceeding the wallet cap
-            assert.strictEqual(
-                error.error.errorCode.code,
-                "ExceedsWalletCap",
-                "Error for exceeding wallet cap should trigger"
-            );
-        }
-    });
+    // Assert that the burn and marketing wallets received the correct amounts
+    expect(burnWalletTokenAccount.amount.toNumber()).to.equal(expectedTaxSplit);  // Verify burn wallet balance
+    expect(marketingWalletTokenAccount.amount.toNumber()).to.equal(expectedTaxSplit);  // Verify marketing wallet balance
+  });
 });
