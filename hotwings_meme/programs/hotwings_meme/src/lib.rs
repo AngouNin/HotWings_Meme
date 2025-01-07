@@ -182,7 +182,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount};
 
-declare_id!("F315xx75TiyxnGV4vAZssphVdauiYNA5bJThvKGty6Mj");
+declare_id!("5RofsCGpCRjN6GfUYUguKLo2W1jzGZtYkGH7AopXrwVW");
 
 /// Main program module
 #[program]
@@ -380,13 +380,22 @@ pub struct Initialize<'info> {
 }
 
 /// Context for locking tokens.
+// #[derive(Accounts)]
+// pub struct LockTokens<'info> {
+//     #[account(mut)]
+//     pub investor: Account<'info, Investor>,
+//     #[account(mut)]
+//     pub hotwings_state: Account<'info, HotwingsState>,
+// }
+
 #[derive(Accounts)]
 pub struct LockTokens<'info> {
-    #[account(mut)]
+    #[account(mut, signer)] // Add `signer` constraint so `investor` must sign
     pub investor: Account<'info, Investor>,
     #[account(mut)]
     pub hotwings_state: Account<'info, HotwingsState>,
 }
+
 
 /// Context for unlocking tokens.
 #[derive(Accounts)]
